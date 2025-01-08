@@ -63,7 +63,7 @@ const ProposalForm = () => {
 
     const fetchClients = async () => {
         try {
-            const response = await fetch("http://localhost:5000/api/clients/getClients");
+            const response = await fetch("https://final-proposal-order-backend.vercel.app/api/clients/getClients");
             const result = await response.json();
             setClients(result);
         } catch (err) {
