@@ -19,7 +19,7 @@ const AddClient = () => {
     e.preventDefault();
 
     try {
-      const response = await axios.post("http//localhost:5000/api/clients", customer, {
+      const response = await axios.post("https://final-proposal-order-backend.vercel.app/api/clients", customer, {
         headers: {
           "Content-Type": "application/json",
         },
