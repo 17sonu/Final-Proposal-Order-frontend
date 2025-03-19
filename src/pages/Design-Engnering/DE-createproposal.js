@@ -1,344 +1,168 @@
 import React, { useEffect, useState } from "react";
-import {
-    TextField,
-    Button,
-    Select,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    MenuItem,
-    FormControl,
-    InputLabel,
-    TableRow,
-    Paper,
-    IconButton,
-} from "@mui/material";
-import AddCircleIcon from "@mui/icons-material/AddCircle";
-import DeleteIcon from "@mui/icons-material/Delete";
-import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import axios from "axios";
 
-const ProposalForm = () => {
-    const [clientName, setClientName] = useState("");
-    const [clientEmail, setClientEmail] = useState("");
-    const [items, setItems] = useState([
-        { description: "", quantity: 0, price: 0, discount: 0 },
-    ]);
-    const [taxRate, setTaxRate] = useState(0);
-    const [dueDate, setDueDate] = useState("");
+const POList = () => {
+    const [file, setFile] = useState(null);
     const [message, setMessage] = useState("");
-    const [clients, setClients] = useState([]);
-
-    // Calculate totals
-    const subTotal = items.reduce(
-        (total, item) =>
-            total + item.quantity * item.price * (1 - item.discount / 100),
-        0
-    );
-    const vat = (subTotal * taxRate) / 100;
-    const total = subTotal + vat;
-
-    const handleAddItem = () => {
-        setItems([...items, { description: "", quantity: 0, price: 0, discount: 0 }]);
-    };
-
-    const handleDeleteItem = (index) => {
-        const newItems = items.filter((_, i) => i !== index);
-        setItems(newItems);
-    };
-
-    const handleChange = (index, field, value) => {
-        const newItems = [...items];
-        newItems[index][field] = value;
-        setItems(newItems);
-    };
-
-    const [status, setStatus] = useState("Unpaid");
-
-    const handleStatusChange = (event) => {
-        setStatus(event.target.value);
-    };
-
-    const fetchClients = async () => {
-        try {
-            const response = await fetch("https://final-proposal-order-backend.vercel.app/api/clients/getClients");
-            const result = await response.json();
-            setClients(result);
-        } catch (err) {
-            console.log(err);
-        }
-    };
+    const [poData, setPOData] = useState([]);
+    const [woData, setWOData] = useState([]);
 
     useEffect(() => {
-        fetchClients();
+        fetchPOData();
+        fetchWOData();
     }, []);
 
-    const handleClientChange = (event) => {
-        const selectedClientName = event.target.value;
-        setClientName(selectedClientName);
-
-        const selectedClient = clients.find(client => client.name === selectedClientName);
-        setClientEmail(selectedClient ? selectedClient.email : "");
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const fetchPOData = async () => {
         try {
-            const response = await fetch("http://localhost:5000/api/invoices", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    client: {
-                        name: clientName,
-                        email: clientEmail,
-                    },
-                    items,
-                    taxRate,
-                    dueDate,
-                    total,
-                    status,
-                }),
-            });
-            if (response.ok) {
-                setMessage("Proposal submitted successfully!");
-                setClientName("");
-                setClientEmail("");
-                setItems([{ description: "", quantity: 0, price: 0, discount: 0 }]);
-                setTaxRate(0);
-                setDueDate("");
-                setStatus("Unpaid");
-            } else {
-                setMessage("Failed to submit order. Please try again.");
-            }
+            const response = await axios.get("/api/po-data");
+            setPOData(response.data);
         } catch (error) {
-            setMessage("An error occurred. Please try again.");
+            console.error("Error fetching TE data", error);
         }
     };
 
-    const handleDownloadInvoice = () => {
-        const doc = new jsPDF();
-        doc.text("Invoice", 10, 10);
-        doc.autoTable({
-            head: [['Item', 'Qty', 'Price', 'Disc (%)', 'Amount']],
-            body: items.map(item => [
-                item.description,
-                item.quantity,
-                item.price,
-                item.discount,
-                (item.quantity * item.price * (1 - item.discount / 100)).toFixed(2)
-            ]),
-        });
-        doc.save("invoice.pdf");
+    const fetchWOData = async () => {
+        try {
+            const response = await axios.get("/api/wo-data");
+            setWOData(response.data);
+        } catch (error) {
+            console.error("Error fetching PO data", error);
+        }
+    };
+
+    const handleFileChange = (e) => {
+        setFile(e.target.files[0]);
+    };
+
+    const handleUpload = async () => {
+        if (!file) {
+            setMessage("Please select a file");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("pdf", file);
+
+        try {
+            const response = await axios.post("/api/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+
+            const { poNumber, poDate } = response.data;
+
+            setMessage(`✅ File uploaded successfully! TE Number: ${poNumber}, TE Date: ${poDate}`);
+            fetchPOData();
+        } catch (error) {
+            setMessage(error.response?.data?.message || "Error uploading file");
+        }
+    };
+
+    const handleConvert = async (poNumber) => {
+        try {
+            const response = await axios.post("/api/convert-to-wo", { poNumber });
+            alert(`WO Number Created: ${response.data.woNumber}`);
+            fetchWOData();
+        } catch (error) {
+            alert(error.response?.data?.message || "Conversion failed");
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this TE?")) return;
+
+        try {
+            await axios.delete(`/api/delete-po/${id}`);
+            alert("TE deleted successfully");
+            fetchPOData();
+        } catch (error) {
+            alert(error.response?.data?.message || "Failed to delete");
+        }
     };
 
     return (
-        <div className="p-4">
-            <h1 align="center" className="text-4xl font-bold text-red-600">Proposal Invoice</h1>
-            <form onSubmit={handleSubmit}>
-                <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <h2 className="text-xl font-bold">Bill To</h2>
-                        <table>
-                            <tr>
-                                <td>
-                                    <select
-                                        value={clientName}
-                                        onChange={handleClientChange}
-                                        className="w-40 p-2 rounded-sm border-2 border-black shadow-lg"
-                                    >
-                                        <option value="">Select Client</option>
-                                        {clients.map(client => (
-                                            <option key={client._id} value={client.name}>
-                                                {client.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </td>
-                            </tr>
-                            <tr><td> <span>&nbsp;&nbsp;</span></td></tr>
-                            <tr>
-                                <td>
-                                    <TextField
-                                        label="Client Email"
-                                        variant="outlined"
-                                        value={clientEmail}
-                                        onChange={(e) => setClientEmail(e.target.value)}
-                                        disabled
-                                        InputLabelProps={{
-                                            shrink: true,
-                                        }}
-                                    />
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+        <div className="container mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-4 text-center">Document Management</h1>
 
-                    <div className="text-right">
-                        <FormControl fullWidth>
-                            <InputLabel id="status-label">Status</InputLabel>
-                            <Select
-                                label="Status"
-                                value={status}
-                                onChange={handleStatusChange}
-                            >
-                                <MenuItem value="Paid">Paid</MenuItem>
-                                <MenuItem value="Partially Paid">Partially Paid</MenuItem>
-                                <MenuItem value="Unpaid">Unpaid</MenuItem>
-                            </Select>
-                        </FormControl>
-                        <p>
-                            <strong>Date:</strong> {new Date().toLocaleDateString()}
-                        </p>
-                        <p>
-                            <strong>Due Date:</strong> {dueDate || "Select a due date"}
-                        </p>
-                        <p>
-                            <strong>Amount:</strong> INR {total.toFixed(2)}
-                        </p>
-                    </div>
-                </div>
-
-                <TableContainer component={Paper} className="mt-4">
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Item</TableCell>
-                                <TableCell>Qty</TableCell>
-                                <TableCell>Price</TableCell>
-                                <TableCell>Disc(%)</TableCell>
-                                <TableCell>Amount</TableCell>
-                                <TableCell>Action</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {items.map((item, index) => (
-                                <TableRow key={index}>
-                                    <TableCell>
-                                        <TextField
-                                            placeholder="Item name or description"
-                                            variant="outlined"
-                                            fullWidth
-                                            value={item.description}
-                                            onChange={(e) =>
-                                                handleChange(index, "description", e.target.value)
-                                            }
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            type="number"
-                                            variant="outlined"
-                                            fullWidth
-                                            value={item.quantity}
-                                            onChange={(e) =>
-                                                handleChange(index, "quantity", e.target.value)
-                                            }
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            type="number"
-                                            variant="outlined"
-                                            fullWidth
-                                            value={item.price}
-                                            onChange={(e) =>
-                                                handleChange(index, "price", e.target.value)
-                                            }
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            type="number"
-                                            variant="outlined"
-                                            fullWidth
-                                            value={item.discount}
-                                            onChange={(e) =>
-                                                handleChange(index, "discount", e.target.value)
-                                            }
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        {(item.quantity * item.price * (1 - item.discount / 100)).toFixed(2)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <IconButton
-                                            color="error"
-                                            onClick={() => handleDeleteItem(index)}
-                                        >
-                                            <DeleteIcon />
-                                        </IconButton>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-
-                <div className="flex justify-between mt-6">
-                    <IconButton color="primary" onClick={handleAddItem}>
-                        <AddCircleIcon />
-                    </IconButton>
-                    <div className="text-right">
-                        <h3 className="font-bold">Invoice Summary</h3>
-                        <p>Sub total: INR {subTotal.toFixed(2)}</p>
-                        <p>
-                            GST (%):
-                            <TextField
-                                type="number"
-                                size="small"
-                                value={taxRate}
-                                onChange={(e) => setTaxRate(e.target.value)}
-                                className="ml-2 w-20"
-                            />
-                        </p>
-                        <p>Total: INR {total.toFixed(2)}</p>
-                    </div>
-                </div>
-
-                <div className="flex justify-between items-center mt-6">
-                    <TextField
-                        label="Tax Rates (%)"
-                        type="number"
-                        variant="outlined"
-                        value={taxRate}
-                        onChange={(e) => setTaxRate(e.target.value)}
-                    />
-                    <TextField
-                        label="Due Date"
-                        type="date"
-                        variant="outlined"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        InputLabelProps={{
-                            shrink: true,
-                        }}
-                    />
-                </div>
-                <br></br>
-                <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    className="mt-4"
+            {/* File Upload Section */}
+            <div className="bg-white shadow-md rounded-lg p-6 mb-6">
+                <h2 className="text-lg font-semibold mb-4">Upload Tender Enquiry PDF</h2>
+                <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    className="border rounded p-2 w-full"
+                />
+                <button
+                    onClick={handleUpload}
+                    className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
-                    Submit Order
-                </Button>
-            </form>
-            <Button
-                variant="contained"
-                color="secondary"
-                className="mt-4"
-                onClick={handleDownloadInvoice}
-            >
-                Download Invoice as PDF
-            </Button>
-            {message && <p className="mt-4">{message}</p>}
+                    Upload
+                </button>
+                {message && <p className="mt-2 text-green-600">{message}</p>}
+            </div>
+
+            {/* PO List */}
+            <h2 className="text-xl font-semibold mb-2">Tender Enquiry (TE) List</h2>
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-300 shadow-md">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            <th className="p-2 border">TE Number</th>
+                            <th className="p-2 border">TE Date</th>
+                            <th className="p-2 border">File Name</th>
+                            <th className="p-2 border">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {poData.map((po, index) => (
+                            <tr key={po._id} className="odd:bg-gray-100 even:bg-white hover:bg-gray-300">
+                                <td className="p-2 border">{po.poNumber}</td>
+                                <td className="p-2 border">{po.poDate}</td>
+                                <td className="p-2 border">{po.fileName}</td>
+                                <td className="p-2 border flex gap-2">
+                                    <button
+                                        className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                                        onClick={() => handleConvert(po.poNumber)}
+                                    >
+                                        Convert to WO
+                                    </button>
+                                    <button
+                                        className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+                                        onClick={() => handleDelete(po._id)}
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* WO List */}
+            <h2 className="text-xl font-semibold mt-6 mb-2">Purchase Orders (PO) List</h2>
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-300 shadow-md">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            <th className="p-2 border">PO Number</th>
+                            <th className="p-2 border">TE Number</th>
+                            <th className="p-2 border">TE Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {woData.map((wo) => (
+                            <tr key={wo._id} className="hover:bg-gray-50">
+                                <td className="p-2 border">{wo.woNumber}</td>
+                                <td className="p-2 border">{wo.poNumber}</td>
+                                <td className="p-2 border">{wo.poDate}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
 
-export default ProposalForm;
+export default POList;
